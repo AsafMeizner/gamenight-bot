@@ -2,9 +2,10 @@
 import os
 import asyncio
 from pathlib import Path
+import random
 
 import discord
-from discord.ext import commands
+from discord.ext import commands, tasks
 from dotenv import load_dotenv
 
 BASE_DIR = Path(__file__).resolve().parent
@@ -20,7 +21,7 @@ intents.guilds = True
 intents.voice_states = True
 intents.message_content = False  # not needed; we use slash commands
 
-bot = commands.Bot(command_prefix="!", intents=intents)  # prefix unused; slash/tree instead
+bot = commands.Bot(command_prefix="!", intents=intents)
 
 COGS = [
     "cogs.meta",
@@ -33,6 +34,8 @@ COGS = [
     "cogs.trivia",
     "cogs.rps",
     "cogs.tictactoe",
+    "cogs.guess_the_song",  
+    "cogs.radio",          
 ]
 
 @bot.event
@@ -42,7 +45,29 @@ async def on_ready():
     except Exception:
         pass
     print(f"Logged in as {bot.user} (ID: {bot.user.id})")
-    await bot.change_presence(activity=discord.Game(name="/help"))
+    if not rotate_presence.is_running():
+        rotate_presence.start()
+
+# -------- Rich rotating presence --------
+PRESENCES = [
+    lambda: discord.Activity(type=discord.ActivityType.listening, name="/trivia"),
+    lambda: discord.Activity(type=discord.ActivityType.playing, name="Rock–Paper–Scissors"),
+    lambda: discord.Activity(type=discord.ActivityType.listening, name="global radio /radio"),
+    lambda: discord.Activity(type=discord.ActivityType.playing, name="Tic-Tac-Toe"),
+    lambda: discord.Activity(type=discord.ActivityType.listening, name="your secrets /encrypt"),
+    lambda: discord.Activity(type=discord.ActivityType.competing, name="Guess the Song"),
+]
+
+@tasks.loop(minutes=2)
+async def rotate_presence():
+    try:
+        activity = random.choice(PRESENCES)()
+        await bot.change_presence(
+            activity=activity,
+            status=random.choice([discord.Status.online, discord.Status.idle])
+        )
+    except Exception:
+        pass
 
 async def load_cogs():
     for ext in COGS:

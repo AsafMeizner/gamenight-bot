@@ -39,15 +39,14 @@ class TruthOrDareView(discord.ui.View):
     async def start(self, first_kind: str):
         self.kind = first_kind
         q = self._pick()
-        self.msg = await self.inter.response.send_message(embed=self._embed(q), view=self)
+        await self.inter.response.send_message(embed=self._embed(q), view=self)
+        self.msg = await self.inter.original_response()
 
     async def _next(self, interaction: discord.Interaction, kind: Optional[str] = None):
         if kind:
             self.kind = kind
         q = self._pick()
         await interaction.response.defer()
-        if self.msg:
-            await self.msg.edit(view=None)
         self.msg = await interaction.followup.send(embed=self._embed(q), view=self)
 
     @discord.ui.button(label="Truth", style=discord.ButtonStyle.success)

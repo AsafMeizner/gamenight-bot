@@ -1,0 +1,22 @@
+[
+  {"name": "BBC Radio 1 (UK)", "url": "https://stream.live.vc.bbcmedia.co.uk/bbc_radio_one"},
+  {"name": "BBC Radio 2 (UK)", "url": "https://stream.live.vc.bbcmedia.co.uk/bbc_radio_two"},
+  {"name": "KEXP 90.3 (Seattle)", "url": "https://kexp-mp3-128.streamguys1.com/kexp128.mp3"},
+  {"name": "NPR (US)", "url": "https://npr-ice.streamguys1.com/live.mp3"},
+  {"name": "Lofi Hip Hop Radio", "url": "https://streams.fluxfm.de/Chillhop/mp3-320/streams.fluxfm.de/"},
+  {"name": "Radio Paradise (Main Mix)", "url": "https://stream.radioparadise.com/aac-320"},
+  {"name": "SomaFM - Groove Salad", "url": "https://ice2.somafm.com/groovesalad-128-aac"},
+  {"name": "SomaFM - Drone Zone", "url": "https://ice2.somafm.com/dronezone-128-aac"},
+  {"name": "SomaFM - Defcon Radio", "url": "https://ice2.somafm.com/defcon-128-aac"},
+  {"name": "181.FM - 90s Dance", "url": "https://listen.181fm.com/181-90sdance_128k.mp3"},
+  {"name": "181.FM - The Buzz", "url": "https://listen.181fm.com/181-buzz_128k.mp3"},
+  {"name": "Radio Swiss Jazz", "url": "https://stream.srg-ssr.ch/m/rsj/mp3_128"},
+  {"name": "Radio Swiss Pop", "url": "https://stream.srg-ssr.ch/m/rsp/mp3_128"},
+  {"name": "Radio Swiss Classic", "url": "https://stream.srg-ssr.ch/m/rsc_de/mp3_128"},
+  {"name": "Jazz FM (UK)", "url": "https://edge-bauerall-01-gos2.sharp-stream.com/jazz.mp3"},
+  {"name": "Classic FM (Netherlands)", "url": "https://playerservices.streamtheworld.com/api/livestream-redirect/CLASSICFM.mp3"},
+  {"name": "FIP (France)", "url": "https://icecast.radiofrance.fr/fip-hifi.aac"},
+  {"name": "France Inter", "url": "https://icecast.radiofrance.fr/franceinter-hifi.aac"},
+  {"name": "Absolute Radio (UK)", "url": "https://icecast.thisisdax.com/AbsoluteRadioHigh.aac"},
+  {"name": "Heart 80s (UK)", "url": "https://media-ssl.musicradio.com/Heart80sMP3"}
+]

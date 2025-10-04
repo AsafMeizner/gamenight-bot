@@ -40,21 +40,29 @@ class Encryption(commands.Cog):
         description="Encrypt text (Base64URL) and post an embed with your avatar/name + Decrypt button."
     )
     @app_commands.describe(
-        hidden="If true, the ack is hidden (default: False). The encrypted embed is always public."
+        hidden="If true, the ack is hidden (default: True).",
+        anonymous="If true, the embed won't show your name/avatar (default: False)."
     )
-    async def encrypt_cmd(self, inter: discord.Interaction, seed: str, message: str, hidden: Optional[bool] = False):
+    async def encrypt_cmd(self, inter: discord.Interaction, seed: str, message: str, hidden: Optional[bool] = True, anonymous: Optional[bool] = False):
         await inter.response.defer(ephemeral=bool(hidden))
         try:
             ciphertext = encrypt_strong(message, seed)
-            avatar_url = inter.user.display_avatar.url
             emb = discord.Embed(
                 description=f":lock: `{ciphertext}`\n\n🔐 Need to read it? Click **Decrypt** and enter the seed.",
                 color=discord.Color.blurple()
             )
-            emb.set_author(name=inter.user.display_name, icon_url=avatar_url)
+            
+            if not anonymous:
+                avatar_url = inter.user.display_avatar.url
+                emb.set_author(name=inter.user.display_name, icon_url=avatar_url)
+            
             emb.set_footer(text="Decrypt opens a private modal; result is sent ephemerally to you.")
             view = DecryptView(ciphertext)
-            await inter.followup.send(embed=emb, view=view, ephemeral=False)
+            
+            # Send as a new message to the channel instead of a reply
+            await inter.channel.send(embed=emb, view=view)
+            # Confirm to user ephemerally
+            await inter.followup.send("✅ Encrypted message sent!", ephemeral=True)
         except Exception as e:
             await inter.followup.send(f"Error during encryption: {e}", ephemeral=True)
 

@@ -41,9 +41,18 @@ class RPSMatchView(discord.ui.View):
         self.choices: Dict[int, Optional[str]] = {p1.id: None, p2.id: None}
         self.scores: Dict[int, int] = {p1.id: 0, p2.id: 0}
         self.round_no = 1
+        self.match_msg: Optional[discord.Message] = None
 
     def _guard_player(self, u: discord.abc.User) -> bool:
         return u.id in self.choices
+
+    async def start(self, interaction: discord.Interaction):
+        """Start the RPS match by sending the initial round message."""
+        desc = f"{self.p1.mention} vs {self.p2.mention}\n\n{self.p1.display_name}: ❓ Waiting...\n{self.p2.display_name}: ❓ Waiting..."
+        emb = discord.Embed(title=f"🎮 ROUND {self.round_no} 🎮", description=desc, color=discord.Color.blurple())
+        emb.add_field(name="Score", value=rps_score_line(self.scores, self.p1, self.p2), inline=False)
+        msg = await interaction.followup.send(embed=emb, view=self, wait=True)
+        self.match_msg = msg
 
     async def _handle_pick(self, interaction: discord.Interaction, pick: str):
         if not self._guard_player(interaction.user):
@@ -53,30 +62,61 @@ class RPSMatchView(discord.ui.View):
             await interaction.response.send_message("You already picked this round.", ephemeral=True)
             return
         self.choices[interaction.user.id] = pick
-        await interaction.response.send_message(f"You picked **{pick}**.", ephemeral=True)
 
-        if all(self.choices.values()):
+        # Update message to show who has picked
+        if not all(self.choices.values()):
+            # Show that this player picked, waiting for other
+            p1_status = "✅ Locked in!" if self.choices[self.p1.id] else "❓ Waiting..."
+            p2_status = "✅ Locked in!" if self.choices[self.p2.id] else "❓ Waiting..."
+            desc = f"{self.p1.mention} vs {self.p2.mention}\n\n{self.p1.display_name}: {p1_status}\n{self.p2.display_name}: {p2_status}"
+            emb = discord.Embed(title=f"🎮 ROUND {self.round_no} 🎮", description=desc, color=discord.Color.blurple())
+            emb.add_field(name="Score", value=rps_score_line(self.scores, self.p1, self.p2), inline=False)
+            
+            if self.match_msg:
+                try:
+                    await self.match_msg.edit(embed=emb, view=self)
+                except Exception:
+                    pass
+            await interaction.response.send_message(f"You picked **{pick}**!", ephemeral=True)
+        else:
+            # Both picked - show results
             c1 = self.choices[self.p1.id]
             c2 = self.choices[self.p2.id]
             res = rps_result(c1, c2)  # type: ignore
 
             if res == 1:
                 self.scores[self.p1.id] += 1
-                verdict = f"**{self.p1.display_name}** wins this round!"
+                verdict = f"🎉 **{self.p1.display_name}** wins this round!"
             elif res == -1:
                 self.scores[self.p2.id] += 1
-                verdict = f"**{self.p2.display_name}** wins this round!"
+                verdict = f"🎉 **{self.p2.display_name}** wins this round!"
             else:
-                verdict = "**Tie!**"
+                verdict = "🤝 **It's a tie!**"
 
-            desc = f"**{self.p1.display_name}** ({c1})  vs  **{self.p2.display_name}** ({c2})\n{verdict}"
-            emb = rps_embed(f"RPS – Round {self.round_no} result", desc, self.p1, self.p2, self.scores)
+            # Map choices to emojis
+            emoji_map = {"rock": "🪨", "paper": "📄", "scissors": "✂️"}
+            desc = f"{self.p1.mention} vs {self.p2.mention}\n\n{self.p1.display_name}: {emoji_map.get(c1, c1)} **{c1}**\n{self.p2.display_name}: {emoji_map.get(c2, c2)} **{c2}**\n\n{verdict}\n\n*Pick your next move!*"
+            
+            emb = discord.Embed(title=f"🎮 ROUND {self.round_no} RESULT 🎮", description=desc, color=discord.Color.gold())
+            emb.add_field(name="Score", value=rps_score_line(self.scores, self.p1, self.p2), inline=False)
 
+            # Reset choices for next round
+            self.round_no += 1
+            self.choices[self.p1.id] = None
+            self.choices[self.p2.id] = None
+
+            # Enable end button
             for child in self.children:
-                if isinstance(child, discord.ui.Button) and child.custom_id in ("rps_rematch", "rps_end"):
+                if isinstance(child, discord.ui.Button) and child.custom_id == "rps_end":
                     child.disabled = False
 
-            await interaction.followup.send(embed=emb)
+            # Edit the original message with results and ready for next round
+            if self.match_msg:
+                try:
+                    await self.match_msg.edit(embed=emb, view=self)
+                except Exception:
+                    pass
+            await interaction.response.send_message(f"You picked **{pick}**!", ephemeral=True)
 
     @discord.ui.button(label="Rock", style=discord.ButtonStyle.secondary, row=0, custom_id="rps_rock")
     async def btn_rock(self, interaction: discord.Interaction, button: discord.ui.Button):
@@ -90,20 +130,9 @@ class RPSMatchView(discord.ui.View):
     async def btn_scissors(self, interaction: discord.Interaction, button: discord.ui.Button):
         await self._handle_pick(interaction, "scissors")
 
-    @discord.ui.button(label="Rematch", style=discord.ButtonStyle.success, row=1, disabled=True, custom_id="rps_rematch")
-    async def btn_rematch(self, interaction: discord.Interaction, button: discord.ui.Button):
-        if not self._guard_player(interaction.user):
-            await interaction.response.send_message("Only the current players can request a rematch.", ephemeral=True)
-            return
-        self.round_no += 1
-        self.choices[self.p1.id] = None
-        self.choices[self.p2.id] = None
-        self.btn_rematch.disabled = True  # type: ignore
-        desc = f"{self.p1.mention} vs {self.p2.mention}\nNew round! Pick again."
-        emb = rps_embed(f"RPS – Round {self.round_no}", desc, self.p1, self.p2, self.scores)
-        await interaction.followup.send(embed=emb)
 
-    @discord.ui.button(label="End", style=discord.ButtonStyle.danger, row=1, disabled=True, custom_id="rps_end")
+
+    @discord.ui.button(label="End Match", style=discord.ButtonStyle.danger, row=1, disabled=True, custom_id="rps_end")
     async def btn_end(self, interaction: discord.Interaction, button: discord.ui.Button):
         if not self._guard_player(interaction.user):
             await interaction.response.send_message("Only the current players can end the match.", ephemeral=True)
@@ -111,11 +140,32 @@ class RPSMatchView(discord.ui.View):
         for child in self.children:
             if isinstance(child, discord.ui.Button):
                 child.disabled = True
-        emb = rps_embed("RPS – Match finished",
-                        f"Final: {rps_score_line(self.scores, self.p1, self.p2)}",
-                        self.p1, self.p2, self.scores)
-        await interaction.followup.send(embed=emb)
-        await interaction.followup.send(embed=rps_victory_embed(self.p1, self.p2, self.scores))
+        
+        # Determine winner
+        s1, s2 = self.scores.get(self.p1.id, 0), self.scores.get(self.p2.id, 0)
+        if s1 == s2:
+            title = "🤝 MATCH OVER - TIE 🤝"
+            desc = f"Tied at **{s1}**–**{s2}**!"
+            color = discord.Color.orange()
+        elif s1 > s2:
+            title = "🏆 VICTORY 🏆"
+            desc = f"**{self.p1.display_name}** wins **{s1}**–**{s2}** over **{self.p2.display_name}**!"
+            color = discord.Color.green()
+        else:
+            title = "🏆 VICTORY 🏆"
+            desc = f"**{self.p2.display_name}** wins **{s2}**–**{s1}** over **{self.p1.display_name}**!"
+            color = discord.Color.green()
+        
+        emb = discord.Embed(title=title, description=desc, color=color)
+        emb.add_field(name="Final Score", value=rps_score_line(self.scores, self.p1, self.p2), inline=False)
+        
+        if self.match_msg:
+            try:
+                await self.match_msg.edit(embed=emb, view=self)
+            except Exception:
+                pass
+        
+        await interaction.response.send_message("Match ended!", ephemeral=True)
         self.stop()
 
 class RPSLobbyView(discord.ui.View):
@@ -156,9 +206,11 @@ class RPSLobbyView(discord.ui.View):
                         await self.lobby.msg.edit(content=f"**RPS Match:** {p1.mention} vs {p2.mention}", view=None)
                     except Exception:
                         pass
-                await match.btn_rematch.callback  # silence linter unused
-                await match.btn_end.callback      # silence linter unused
-                await match.start(interaction)
+                desc = f"{p1.mention} vs {p2.mention}\n\n{p1.display_name}: ❓ Waiting...\n{p2.display_name}: ❓ Waiting..."
+                emb = discord.Embed(title=f"🎮 ROUND {match.round_no} 🎮", description=desc, color=discord.Color.blurple())
+                emb.add_field(name="Score", value=rps_score_line(match.scores, p1, p2), inline=False)
+                msg = await interaction.followup.send(embed=emb, view=match, wait=True)
+                match.match_msg = msg
 
     class AcceptBtn(discord.ui.Button):
         def __init__(self, lobby: 'RPSLobbyView'):
@@ -193,7 +245,7 @@ class RPSLobbyView(discord.ui.View):
             text = f"**RPS Free-for-all!** First two people to press **Join** will play."
         else:
             text = (
-                f"**RPS Challenge:** {self.starter.mention} vs {self.opponent.mention}\n"
+                f"**Rock Paper Scissors Challenge:** {self.starter.mention} vs {self.opponent.mention}\n"
                 f"{self.opponent.mention}, press **Accept** to start."
             )
         await interaction.response.send_message(text, view=self)
