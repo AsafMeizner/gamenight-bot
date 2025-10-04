@@ -25,11 +25,12 @@ def load_stations():
 STATIONS = load_stations()  # [{name,url},...]
 
 class RadioView(discord.ui.View):
-    def __init__(self, cog: 'Radio', current_station: dict, voice_channel: discord.VoiceChannel):
+    def __init__(self, cog: 'Radio', current_station: dict, voice_channel: discord.VoiceChannel, message: discord.Message = None):
         super().__init__(timeout=None)
         self.cog = cog
         self.current_station = current_station
         self.voice_channel = voice_channel
+        self.message = message
         self.stop_votes: Set[int] = set()
         self.station_votes: dict[str, Set[int]] = {}
         
@@ -55,6 +56,63 @@ class RadioView(discord.ui.View):
         stop_button.callback = self.stop_callback
         self.add_item(stop_button)
     
+    def get_eligible_members(self):
+        """Get members who can vote (excluding bots, muted, and deafened)"""
+        eligible = []
+        for m in self.voice_channel.members:
+            if m.bot:
+                continue
+            # Skip if server muted/deafened or self muted/deafened
+            if m.voice.mute or m.voice.deaf or m.voice.self_mute or m.voice.self_deaf:
+                continue
+            eligible.append(m)
+        return eligible
+    
+    def get_vote_display(self):
+        """Generate vote status display"""
+        eligible = self.get_eligible_members()
+        total_voters = len(eligible)
+        
+        if total_voters == 0:
+            return ""
+        
+        lines = []
+        
+        # Show station switch votes
+        if self.station_votes:
+            lines.append("\n**Switch Votes:**")
+            for station_name, voters in self.station_votes.items():
+                vote_count = len(voters)
+                votes_needed = (total_voters + 1) // 2
+                lines.append(f"• {station_name}: {vote_count}/{votes_needed}")
+        
+        # Show stop votes
+        if self.stop_votes:
+            stop_count = len(self.stop_votes)
+            votes_needed = (total_voters + 1) // 2
+            lines.append(f"\n**Stop Votes:** {stop_count}/{votes_needed}")
+        
+        return "\n".join(lines) if lines else ""
+    
+    async def update_message_votes(self):
+        """Update the message to show current vote counts"""
+        if not self.message:
+            return
+        
+        vote_display = self.get_vote_display()
+        eligible = self.get_eligible_members()
+        
+        embed = make_embed(
+            "📻 Live Radio",
+            f"Now streaming **{self.current_station['name']}** in {self.voice_channel.mention}\n\nVote to switch stations or stop the radio:\n**Eligible Voters:** {len(eligible)}{vote_display}",
+            discord.Color.green()
+        )
+        
+        try:
+            await self.message.edit(embed=embed, view=self)
+        except Exception:
+            pass
+    
     def make_station_callback(self, station: dict):
         async def callback(interaction: discord.Interaction):
             await self.handle_station_vote(interaction, station)
@@ -70,10 +128,15 @@ class RadioView(discord.ui.View):
             await interaction.response.send_message("You need to be in the same voice channel to vote!", ephemeral=True)
             return
         
-        # Count members in VC (excluding bots)
-        vc_members = [m for m in self.voice_channel.members if not m.bot]
-        if len(vc_members) == 0:
-            await interaction.response.send_message("No one is in the voice channel!", ephemeral=True)
+        # Check if user is muted or deafened
+        if interaction.user.voice.mute or interaction.user.voice.deaf or interaction.user.voice.self_mute or interaction.user.voice.self_deaf:
+            await interaction.response.send_message("You cannot vote while muted or deafened!", ephemeral=True)
+            return
+        
+        # Count eligible members
+        eligible_members = self.get_eligible_members()
+        if len(eligible_members) == 0:
+            await interaction.response.send_message("No eligible voters in the voice channel!", ephemeral=True)
             return
         
         # Add vote
@@ -82,7 +145,7 @@ class RadioView(discord.ui.View):
             self.station_votes[station_key] = set()
         self.station_votes[station_key].add(interaction.user.id)
         
-        votes_needed = (len(vc_members) + 1) // 2  # Majority
+        votes_needed = (len(eligible_members) + 1) // 2  # Majority
         current_votes = len(self.station_votes[station_key])
         
         if current_votes >= votes_needed:
@@ -92,12 +155,13 @@ class RadioView(discord.ui.View):
             # Update the message
             embed = make_embed(
                 "📻 Live Radio - Station Changed!",
-                f"Now streaming **{station['name']}** in {self.voice_channel.mention}\n\nVote to switch stations or stop the radio:",
+                f"Now streaming **{station['name']}** in {self.voice_channel.mention}\n\nVote to switch stations or stop the radio:\n**Eligible Voters:** {len(eligible_members)}",
                 discord.Color.green()
             )
             
             # Create new view with different random stations
-            new_view = RadioView(self.cog, station, self.voice_channel)
+            new_view = RadioView(self.cog, station, self.voice_channel, self.message)
+            new_view.message = self.message
             
             await interaction.response.edit_message(embed=embed, view=new_view)
         else:
@@ -105,6 +169,7 @@ class RadioView(discord.ui.View):
                 f"Vote registered! {current_votes}/{votes_needed} votes to switch to **{station['name']}**",
                 ephemeral=True
             )
+            await self.update_message_votes()
     
     async def stop_callback(self, interaction: discord.Interaction):
         # Check if user is in the voice channel
@@ -116,16 +181,21 @@ class RadioView(discord.ui.View):
             await interaction.response.send_message("You need to be in the same voice channel to vote!", ephemeral=True)
             return
         
-        # Count members in VC (excluding bots)
-        vc_members = [m for m in self.voice_channel.members if not m.bot]
-        if len(vc_members) == 0:
-            await interaction.response.send_message("No one is in the voice channel!", ephemeral=True)
+        # Check if user is muted or deafened
+        if interaction.user.voice.mute or interaction.user.voice.deaf or interaction.user.voice.self_mute or interaction.user.voice.self_deaf:
+            await interaction.response.send_message("You cannot vote while muted or deafened!", ephemeral=True)
+            return
+        
+        # Count eligible members
+        eligible_members = self.get_eligible_members()
+        if len(eligible_members) == 0:
+            await interaction.response.send_message("No eligible voters in the voice channel!", ephemeral=True)
             return
         
         # Add vote
         self.stop_votes.add(interaction.user.id)
         
-        votes_needed = (len(vc_members) + 1) // 2  # Majority
+        votes_needed = (len(eligible_members) + 1) // 2  # Majority
         current_votes = len(self.stop_votes)
         
         if current_votes >= votes_needed:
@@ -148,6 +218,7 @@ class RadioView(discord.ui.View):
                 f"Vote registered! {current_votes}/{votes_needed} votes to stop the radio",
                 ephemeral=True
             )
+            await self.update_message_votes()
 
 class Radio(commands.Cog):
     def __init__(self, bot: commands.Bot):
@@ -188,6 +259,26 @@ class Radio(commands.Cog):
 
         await inter.response.defer()
         vc = inter.guild.voice_client
+        
+        # Check if already playing - require vote to switch
+        if vc and vc.is_connected() and vc.is_playing():
+            view = RadioView(self, station_obj, inter.user.voice.channel)
+            eligible = view.get_eligible_members()
+            
+            em = make_embed(
+                "📻 Radio Already Playing",
+                f"Currently playing in {vc.channel.mention}\n\nVote to switch to **{station_obj['name']}** or choose another option:\n**Eligible Voters:** {len(eligible)}",
+                discord.Color.orange()
+            )
+            
+            msg = await inter.followup.send(embed=em, view=view)
+            view.message = msg
+            
+            # Auto-vote for the requester
+            view.station_votes[station_obj['name']] = {inter.user.id}
+            await view.update_message_votes()
+            return
+        
         if vc and vc.channel != inter.user.voice.channel:
             try:
                 await vc.move_to(inter.user.voice.channel)
@@ -212,14 +303,17 @@ class Radio(commands.Cog):
         src = discord.FFmpegPCMAudio(station_obj["url"], **FFMPEG_OPTS_RADIO)
         vc.play(src)
 
+        view = RadioView(self, station_obj, inter.user.voice.channel)
+        eligible = view.get_eligible_members()
+        
         em = make_embed(
             "📻 Live Radio",
-            f"Now streaming **{station_obj['name']}** in {vc.channel.mention}\n\nVote to switch stations or stop the radio:",
+            f"Now streaming **{station_obj['name']}** in {vc.channel.mention}\n\nVote to switch stations or stop the radio:\n**Eligible Voters:** {len(eligible)}",
             discord.Color.green()
         )
         
-        view = RadioView(self, station_obj, inter.user.voice.channel)
-        await inter.followup.send(embed=em, view=view)
+        msg = await inter.followup.send(embed=em, view=view)
+        view.message = msg
 
     @radio.autocomplete("station")
     async def radio_autocomplete(self, inter: discord.Interaction, current: str):
@@ -240,6 +334,29 @@ class Radio(commands.Cog):
 
         await inter.response.defer()
         vc = inter.guild.voice_client
+        
+        # Create a custom station object for the URL
+        custom_station = {"name": "Custom Stream", "url": url}
+        
+        # Check if already playing - require vote to switch
+        if vc and vc.is_connected() and vc.is_playing():
+            view = RadioView(self, custom_station, inter.user.voice.channel)
+            eligible = view.get_eligible_members()
+            
+            em = make_embed(
+                "📻 Radio Already Playing",
+                f"Currently playing in {vc.channel.mention}\n\nVote to switch to custom stream:\n`{url}`\n\n**Eligible Voters:** {len(eligible)}",
+                discord.Color.orange()
+            )
+            
+            msg = await inter.followup.send(embed=em, view=view)
+            view.message = msg
+            
+            # Auto-vote for the requester
+            view.station_votes[custom_station['name']] = {inter.user.id}
+            await view.update_message_votes()
+            return
+        
         if vc and vc.channel != inter.user.voice.channel:
             try:
                 await vc.move_to(inter.user.voice.channel)
@@ -267,12 +384,17 @@ class Radio(commands.Cog):
             await inter.followup.send(f"Failed to play URL: {e}")
             return
 
+        view = RadioView(self, custom_station, inter.user.voice.channel)
+        eligible = view.get_eligible_members()
+        
         em = make_embed(
             "📻 Live Stream",
-            f"Now streaming:\n`{url}`\nUse `/stop-audio` to stop.",
+            f"Now streaming:\n`{url}`\n\nVote to switch stations or stop the radio:\n**Eligible Voters:** {len(eligible)}",
             discord.Color.green()
         )
-        await inter.followup.send(embed=em)
+        
+        msg = await inter.followup.send(embed=em, view=view)
+        view.message = msg
 
 async def setup(bot: commands.Bot):
     await bot.add_cog(Radio(bot))

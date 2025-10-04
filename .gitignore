@@ -1,2 +1,4 @@
 .env
 todo.txt
+/cogs/__pycache__/
+/cogs/data/__pycache__/
