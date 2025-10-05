@@ -35,7 +35,8 @@ COGS = [
     "cogs.rps",
     "cogs.tictactoe",
     "cogs.guess_the_song",  
-    "cogs.radio",          
+    "cogs.radio",
+    "cogs.blackjack",
 ]
 
 @bot.event
@@ -56,6 +57,7 @@ PRESENCES = [
     lambda: discord.Activity(type=discord.ActivityType.playing, name="Tic-Tac-Toe"),
     lambda: discord.Activity(type=discord.ActivityType.listening, name="your secrets /encrypt"),
     lambda: discord.Activity(type=discord.ActivityType.competing, name="Guess the Song"),
+    lambda: discord.Activity(type=discord.ActivityType.playing, name="Blackjack"),
 ]
 
 @tasks.loop(minutes=2)
